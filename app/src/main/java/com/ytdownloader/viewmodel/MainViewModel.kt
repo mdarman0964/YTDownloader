@@ -42,8 +42,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedAudioQuality = MutableStateFlow<QualityOption?>(null)
     val selectedAudioQuality: StateFlow<QualityOption?> = _selectedAudioQuality.asStateFlow()
 
-    private val _downloadFormat =
-        MutableStateFlow<DownloadFormat>(DownloadFormat.VIDEO)
+    private val _downloadFormat = MutableStateFlow(DownloadFormat.VIDEO)
     val downloadFormat: StateFlow<DownloadFormat> = _downloadFormat.asStateFlow()
 
     /* ---------------- DOWNLOAD LIST ---------------- */
@@ -66,6 +65,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (!ytdlpManager.isSupportedUrl(url)) {
+            _uiState.value = _uiState.value.copy(
+                error = "Unsupported URL. Please enter a YouTube URL."
+            )
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
@@ -73,32 +79,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 showVideoInfo = false
             )
 
-            val result = ytdlpManager.fetchVideoInfo(url)
+            ytdlpManager.fetchVideoInfo(url)
+                .onSuccess { info ->
+                    _videoInfo.value = info
 
-            result.onSuccess { info ->
-                _videoInfo.value = info
+                    val (videos, audios) = ytdlpManager.getQualityOptions(info)
+                    _videoQualities.value = videos
+                    _audioQualities.value = audios
 
-                val (videos, audios) = ytdlpManager.getQualityOptions(info)
-                _videoQualities.value = videos
-                _audioQualities.value = audios
+                    _selectedVideoQuality.value = videos.firstOrNull()
+                    _selectedAudioQuality.value = audios.firstOrNull()
 
-                _selectedVideoQuality.value = videos.firstOrNull()
-                _selectedAudioQuality.value = audios.firstOrNull()
-
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    showVideoInfo = true
-                )
-            }.onFailure {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = it.message ?: "Failed to load video info"
-                )
-            }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        showVideoInfo = true
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = it.message ?: "Failed to load video info"
+                    )
+                }
         }
     }
 
-    /* ---------------- QUALITY / FORMAT ---------------- */
+    /* ---------------- FORMAT / QUALITY ---------------- */
 
     fun onVideoQualitySelected(option: QualityOption) {
         _selectedVideoQuality.value = option
@@ -190,157 +196,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val error: String? = null,
         val showVideoInfo: Boolean = false,
         val downloadStarted: Boolean = false
-    )
-
-    enum class DownloadFormat {
-        VIDEO, AUDIO, BOTH
-    }
-}        if (!ytdlpManager.isSupportedUrl(url)) {
-            _uiState.value = _uiState.value.copy(
-                error = "Unsupported URL. Please enter a YouTube URL."
-            )
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                error = null,
-                showVideoInfo = false
-            )
-
-            ytdlpManager.fetchVideoInfo(url)
-                .onSuccess { info ->
-                    _videoInfo.value = info
-                    
-                    val (videoOpts, audioOpts) = ytdlpManager.getQualityOptions(info)
-                    _videoQualities.value = videoOpts
-                    _audioQualities.value = audioOpts
-                    
-                    // Select best qualities by default
-                    _selectedVideoQuality.value = videoOpts.firstOrNull()
-                    _selectedAudioQuality.value = audioOpts.firstOrNull()
-                    
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        showVideoInfo = true
-                    )
-                }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = error.message ?: "Failed to fetch video info"
-                    )
-                }
-        }
-    }
-
-    fun onVideoQualitySelected(quality: QualityOption) {
-        _selectedVideoQuality.value = quality
-    }
-
-    fun onAudioQualitySelected(quality: QualityOption) {
-        _selectedAudioQuality.value = quality
-    }
-
-    fun onFormatChange(format: DownloadFormat) {
-        _downloadFormat.value = format
-    }
-
-    fun startDownload() {
-        val info = _videoInfo.value ?: return
-        val url = _uiState.value.url
-        
-        viewModelScope.launch {
-            val quality = when (_downloadFormat.value) {
-                DownloadFormat.VIDEO -> _selectedVideoQuality.value?.displayName ?: "best"
-                DownloadFormat.AUDIO -> _selectedAudioQuality.value?.displayName ?: "best"
-                DownloadFormat.BOTH -> "best"
-            }
-            
-            val format = when (_downloadFormat.value) {
-                DownloadFormat.VIDEO -> "video"
-                DownloadFormat.AUDIO -> "audio"
-                DownloadFormat.BOTH -> "both"
-            }
-            
-            val downloadId = repository.createDownload(
-                url = url,
-                title = info.title,
-                thumbnailUrl = info.thumbnail,
-                uploader = info.uploader,
-                duration = info.durationString,
-                quality = quality,
-                format = format
-            )
-            
-            // Start download service
-            val intent = Intent(getApplication(), DownloadService::class.java).apply {
-                action = DownloadService.ACTION_START_DOWNLOAD
-                putExtra(DownloadService.EXTRA_DOWNLOAD_ID, downloadId)
-            }
-            getApplication<Application>().startService(intent)
-            
-            _uiState.value = _uiState.value.copy(
-                downloadStarted = true,
-                showVideoInfo = false,
-                url = ""
-            )
-            _videoInfo.value = null
-            
-            // Reset download started flag after a delay
-            kotlinx.coroutines.delay(2000)
-            _uiState.value = _uiState.value.copy(downloadStarted = false)
-        }
-    }
-
-    fun retryDownload(download: DownloadItem) {
-        viewModelScope.launch {
-            repository.updateStatus(download.id, DownloadStatus.PENDING)
-            
-            val intent = Intent(getApplication(), DownloadService::class.java).apply {
-                action = DownloadService.ACTION_START_DOWNLOAD
-                putExtra(DownloadService.EXTRA_DOWNLOAD_ID, download.id)
-            }
-            getApplication<Application>().startService(intent)
-        }
-    }
-
-    fun deleteDownload(download: DownloadItem) {
-        viewModelScope.launch {
-            repository.deleteDownload(download)
-        }
-    }
-
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
-    }
-
-    fun resetSharedUrl() {
-        _sharedUrl.value = null
-    }
-
-    private fun checkYTDLPStatus() {
-        viewModelScope.launch {
-            val installed = ytdlpManager.isYTDLPInstalled()
-            val version = if (installed) ytdlpManager.getCurrentVersion() else null
-            
-            _uiState.value = _uiState.value.copy(
-                ytDlpInstalled = installed,
-                ytDlpVersion = version
-            )
-        }
-    }
-
-    data class MainUiState(
-        val url: String = "",
-        val isLoading: Boolean = false,
-        val error: String? = null,
-        val showVideoInfo: Boolean = false,
-        val showUrlInput: Boolean = true,
-        val downloadStarted: Boolean = false,
-        val ytDlpInstalled: Boolean = false,
-        val ytDlpVersion: String? = null
     )
 
     enum class DownloadFormat {
