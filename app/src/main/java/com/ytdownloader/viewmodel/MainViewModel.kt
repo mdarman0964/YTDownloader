@@ -51,12 +51,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.getAllDownloads()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /* ---------------- HANDLE SHARE / INTENT ---------------- */
+    /* ---------------- HANDLE SHARE INTENT (FIXED) ---------------- */
 
     fun handleIntent(intent: Intent?) {
-        val sharedText = intent?.getStringExtra(Intent.EXTRA_TEXT)
-        if (!sharedText.isNullOrBlank()) {
-            _uiState.value = _uiState.value.copy(url = sharedText)
+        if (intent == null) return
+
+        if (intent.action == Intent.ACTION_SEND) {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (!sharedText.isNullOrBlank()) {
+                _uiState.value = _uiState.value.copy(url = sharedText)
+            }
         }
     }
 
@@ -76,7 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         if (!ytdlpManager.isSupportedUrl(url)) {
             _uiState.value = _uiState.value.copy(
-                error = "Unsupported URL. Please enter a YouTube URL."
+                error = "Unsupported URL"
             )
             return
         }
@@ -113,7 +117,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /* ---------------- FORMAT / QUALITY ---------------- */
+    /* ---------------- FORMAT ---------------- */
 
     fun onVideoQualitySelected(option: QualityOption) {
         _selectedVideoQuality.value = option
@@ -169,7 +173,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             _videoInfo.value = null
 
-            delay(1500)
+            delay(1200)
             _uiState.value = _uiState.value.copy(downloadStarted = false)
         }
     }
@@ -179,10 +183,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun retryDownload(item: DownloadItem) {
         viewModelScope.launch {
             repository.updateStatus(item.id, DownloadStatus.PENDING)
+
             val intent = Intent(getApplication(), DownloadService::class.java).apply {
                 action = DownloadService.ACTION_START_DOWNLOAD
                 putExtra(DownloadService.EXTRA_DOWNLOAD_ID, item.id)
             }
+
             getApplication<Application>().startService(intent)
         }
     }
