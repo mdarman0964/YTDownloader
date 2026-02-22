@@ -51,6 +51,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.getAllDownloads()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /* ---------------- HANDLE SHARE / INTENT ---------------- */
+
+    fun handleIntent(intent: Intent?) {
+        val sharedText = intent?.getStringExtra(Intent.EXTRA_TEXT)
+        if (!sharedText.isNullOrBlank()) {
+            _uiState.value = _uiState.value.copy(url = sharedText)
+        }
+    }
+
     /* ---------------- URL ---------------- */
 
     fun onUrlChange(url: String) {
