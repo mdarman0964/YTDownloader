@@ -8,26 +8,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import com.ytdownloader.ui.screens.HistoryScreen
-import com.ytdownloader.ui.screens.HomeScreen
-import com.ytdownloader.ui.screens.SettingsScreen
+import androidx.navigation.compose.*
+import com.ytdownloader.ui.screens.*
 import com.ytdownloader.ui.theme.YTDownloaderTheme
-import com.ytdownloader.viewmodel.HistoryViewModel
-import com.ytdownloader.viewmodel.MainViewModel
-import com.ytdownloader.viewmodel.SettingsViewModel
+import com.ytdownloader.viewmodel.*
 
 class MainActivity : ComponentActivity() {
 
@@ -35,33 +26,23 @@ class MainActivity : ComponentActivity() {
     private val historyViewModel: HistoryViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
-    private val requestPermissionLauncher = registerForActivityResult(
+    private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        // Handle permission results
-    }
+    ) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Check and request permissions
         checkPermissions()
-
-        // Handle intent
         mainViewModel.handleIntent(intent)
 
         setContent {
             YTDownloaderTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    YTDownloaderApp(
-                        mainViewModel = mainViewModel,
-                        historyViewModel = historyViewModel,
-                        settingsViewModel = settingsViewModel
-                    )
-                }
+                AppScaffold(
+                    mainViewModel,
+                    historyViewModel,
+                    settingsViewModel
+                )
             }
         }
     }
@@ -73,79 +54,73 @@ class MainActivity : ComponentActivity() {
 
     private fun checkPermissions() {
         val permissions = mutableListOf<String>()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
-                != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-        
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
+
+        if (Build.VERSION.SDK_INT <= 28 &&
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        
+
         if (permissions.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissions.toTypedArray())
+            permissionLauncher.launch(permissions.toTypedArray())
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun YTDownloaderApp(
+fun AppScaffold(
     mainViewModel: MainViewModel,
     historyViewModel: HistoryViewModel,
     settingsViewModel: SettingsViewModel
 ) {
     val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-
-    val items = listOf(
-        Screen.Home,
-        Screen.History,
-        Screen.Settings
-    )
+    val items = listOf(Screen.Home, Screen.History, Screen.Settings)
 
     Scaffold(
         bottomBar = {
             NavigationBar {
+                val backStack by navController.currentBackStackEntryAsState()
+                val destination = backStack?.destination
+
                 items.forEach { screen ->
                     NavigationBarItem(
-                        icon = { Icon(screen.icon, contentDescription = null) },
-                        label = { Text(stringResource(screen.resourceId)) },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        icon = { Icon(screen.icon, null) },
+                        label = { Text(stringResource(screen.labelRes)) },
+                        selected = destination?.route == screen.route,
                         onClick = {
                             navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
+                                popUpTo(navController.graph.findStartDestination().id)
                                 launchSingleTop = true
-                                restoreState = true
                             }
                         }
                     )
                 }
             }
         }
-    ) { innerPadding ->
+    ) { padding ->
         NavHost(
-            navController = navController,
+            navController,
             startDestination = Screen.Home.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(padding)
         ) {
             composable(Screen.Home.route) {
-                HomeScreen(viewModel = mainViewModel)
+                HomeScreen(mainViewModel)
             }
             composable(Screen.History.route) {
-                HistoryScreen(viewModel = historyViewModel)
+                HistoryScreen(historyViewModel)
             }
             composable(Screen.Settings.route) {
-                SettingsScreen(viewModel = settingsViewModel)
+                SettingsScreen(settingsViewModel)
             }
         }
     }
