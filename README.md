@@ -46,6 +46,34 @@ The APK will be located at:
 - Debug: `app/build/outputs/apk/debug/app-debug.apk`
 - Release: `app/build/outputs/apk/release/app-release-unsigned.apk`
 
+### One-command build (recommended)
+
+If `./gradlew` fails because of a bad proxy environment or wrong local Java version, use:
+
+```bash
+./scripts/build-apk.sh
+```
+
+What this script does:
+- Unsets `http_proxy` / `https_proxy` variables by default (set `KEEP_PROXY=1` to keep them).
+- Clears Java/Gradle proxy JVM flags for the wrapper process.
+- Uses Java 17 from `mise` when available.
+- Warns early when Java or Android SDK env is missing/mismatched.
+- Tries `./gradlew --no-daemon clean assembleDebug` first.
+- If wrapper download fails with network/proxy errors, automatically retries with local `gradle` as fallback.
+- Supports `SKIP_CLEAN=1` for faster retry when dependencies are already cached.
+
+
+Quick retry examples:
+
+```bash
+# Keep your proxy (if your network requires it)
+KEEP_PROXY=1 ./scripts/build-apk.sh
+
+# Rebuild faster without clean (useful after dependencies are cached)
+SKIP_CLEAN=1 ./scripts/build-apk.sh
+```
+
 ### GitHub Actions Build
 
 This project includes a GitHub Actions workflow that automatically builds the APK on every push to main/master branch. You can download the built APK from the Actions artifacts.
